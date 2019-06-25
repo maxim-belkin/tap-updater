@@ -24,9 +24,8 @@ skiplist = [
 
 # Tap folder
 command = ["brew", "--repo", tap_name]
-process = subprocess.Popen(command, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
-stdout, _ = process.communicate()
-this_tap_folder = stdout.decode("ascii").strip()
+process = subprocess.run(command, capture_output=True)
+this_tap_folder = process.stdout.decode("ascii").strip()
 
 os.chdir(f"{this_tap_folder}/Formula")
 formulae = sorted([ splitext( x )[0] for x in glob("*.rb") ])
@@ -38,9 +37,9 @@ outdated_deps = {}
 for formula in formulae:
   try:
     if formula in skiplist: print(f"{formula:20s} skipping"); continue
-    command = ["brew", "livecheck", "-n", tap_name + "/" + formula]
-    process = subprocess.Popen(command, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
-    stdout = process.communicate()[0].decode("ascii").strip()
+    command = ["brew", "livecheck", "-n", f"{tap_name}/{formula}"]
+    process = subprocess.run(command, capture_output=True)
+    stdout = process.stdout.decode("ascii").strip()
 
     if not stdout: continue
     if " : " not in stdout or " ==> " not in stdout: continue
@@ -50,8 +49,8 @@ for formula in formulae:
     print(f"{formula:20s} {old_version}\t{new_version}".expandtabs())
 
     command = ["brew", "deps", "--include-build", "--include-test", "--full-name", f"{tap_name}/{formula}"]
-    process = subprocess.Popen(command, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
-    stdout = process.communicate()[0].decode("ascii").split()
+    process = subprocess.run(command, capture_output=True)
+    stdout = process.stdout.decode("ascii").split()
     this_tap_deps = list(map(lambda x: x[15:], filter(lambda x: x.startswith(tap_name), stdout)))
     deps[formula] = this_tap_deps
     if DEBUG: print(this_tap_deps)
