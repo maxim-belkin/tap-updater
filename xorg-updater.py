@@ -9,6 +9,7 @@ from pprint import pprint
 
 from collections import defaultdict
 
+VERBOSE = 0
 DEBUG = False
 
 tap_name = "linuxbrew/xorg"
@@ -36,24 +37,39 @@ outdated_deps = {}
 
 for formula in formulae:
   try:
-    if formula in skiplist: print(f"{formula:20s} skipping"); continue
+
+    # 1. Skip what has to be skipped
+    if formula in skiplist:
+      if VERBOSE:
+        print(f"{formula:20s} skipping")
+      continue
+
+    # 2. Check if there is a new version of the formula
     command = ["brew", "livecheck", "-n", f"{tap_name}/{formula}"]
     process = subprocess.run(command, capture_output=True)
     stdout = process.stdout.decode("ascii").strip()
 
+    # 3. Go to the next formula if the current one is up-to-date
     if not stdout: continue
+
+    # 4. Go to the next formula if output is not what we can process
     if " : " not in stdout or " ==> " not in stdout: continue
 
+    # 5. Capture old and new versions
     old_version, new_version = stdout.split(" : ")[1].split(' ==> ')
     outdated[formula] = [old_version, new_version]
-    print(f"{formula:20s} {old_version}\t{new_version}".expandtabs())
+
+    if VERBOSE:
+      print(f"{formula:20s} {old_version}\t{new_version}".expandtabs())
 
     command = ["brew", "deps", "--include-build", "--include-test", "--full-name", f"{tap_name}/{formula}"]
     process = subprocess.run(command, capture_output=True)
     stdout = process.stdout.decode("ascii").split()
     this_tap_deps = list(map(lambda x: x[15:], filter(lambda x: x.startswith(tap_name), stdout)))
     deps[formula] = this_tap_deps
-    if DEBUG: print(this_tap_deps)
+
+    if DEBUG:
+      print(deps_from_this_tap)
 
   except KeyboardInterrupt:
     if formula: print(f"I was processing '{formula}'")
