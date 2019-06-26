@@ -65,8 +65,9 @@ for formula in formulae:
     command = ["brew", "deps", "--include-build", "--include-test", "--full-name", f"{tap_name}/{formula}"]
     process = subprocess.run(command, capture_output=True)
     stdout = process.stdout.decode("ascii").split()
-    this_tap_deps = list(map(lambda x: x[15:], filter(lambda x: x.startswith(tap_name), stdout)))
-    deps[formula] = this_tap_deps
+
+    deps_from_this_tap = list(map(lambda x: x.split("/")[-1], filter(lambda x: x.startswith(tap_name), stdout)))
+    deps[formula] = deps_from_this_tap
 
     if DEBUG:
       print(deps_from_this_tap)
