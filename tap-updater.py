@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 
@@ -21,6 +22,7 @@ group.add_argument("-q", "--quiet", help="Suppress any intermediate output.", ac
 parser.add_argument("-d", "--debug", help="Display debugging messages.", action="store_true")
 parser.add_argument('tap_name', help="Tap you'd like to update packages in.")
 parser.add_argument("-s", "--skip", help="White-space-separated list of formulae to skip.", nargs='+', metavar='formula', default=[])
+parser.add_argument("--no-summary", help="Hide summary table (Default: False)", action="store_true")
 args = parser.parse_args()
 
 tap_name = args.tap_name
@@ -29,6 +31,7 @@ skiplist = args.skip
 VERBOSE = args.verbose
 DEBUG = args.debug
 QUIET = args.quiet
+SUMMARY = not args.no_summary
 
 # Tap folder
 command = ["brew", "--repo", tap_name]
@@ -47,12 +50,14 @@ if not os.path.exists(this_tap_folder):
 os.chdir(f"{this_tap_folder}/Formula")
 formulae = sorted([ os.path.splitext( x )[0] for x in glob("*.rb") ])
 
-outdated = {}
 deps = {}
+old_versions = {}
+new_versions = {}
 
 for formula in formulae:
 
-  if not QUIET: print(f"{formula:40s}", end='', flush=True)
+  if not QUIET: print(formula, end=' ', flush=True)
+
   try:
 
     # 1. Skip what has to be skipped
@@ -66,8 +71,10 @@ for formula in formulae:
     stdout = process.stdout.decode("ascii").strip()
 
     # 3. Go to the next formula if the current one is up-to-date
+    # For all sorcery see:
+    # https://en.m.wikipedia.org/wiki/ANSI_escape_code#CSI_sequences
     if not stdout:
-      if not QUIET: print("\b"*40, end='')
+      if not QUIET: print("\033[2K\033[1G", end='')
       continue
 
     # 4. Go to the next formula if output is not what we can process
@@ -76,24 +83,23 @@ for formula in formulae:
       continue
 
     # 5. Capture old and new versions
-    old_version, new_version = stdout.split(" : ")[1].split(' ==> ')
-    outdated[formula] = [old_version, new_version]
+    old_versions[formula], new_versions[formula] = stdout.split(" : ")[1].split(' ==> ')
 
-    if VERBOSE: print(f"{old_version:^12s} ~> {new_version:^12s}")
+    if VERBOSE: print(f"{old_versions[formula]} ~> {new_versions[formula]}")
 
     command = ["brew", "deps", "--include-build", "--include-test", "--full-name", f"{tap_name}/{formula}"]
     process = subprocess.run(command, capture_output=True)
     stdout = process.stdout.decode("ascii").split()
 
-    # deps - deps from the tap being analyzed
+    # deps - deps (up-to-date and outdated) from the tap being analyzed
     deps[formula] = list(map(lambda x: x.split("/")[-1], filter(lambda x: x.startswith(tap_name), stdout)))
 
     if DEBUG and deps[formula]:
       if not VERBOSE: print("")
-      print(" - [DEBUG] dependencies:", ", ".join(deps[formula]))
+      print("[DEBUG] dependencies:", ", ".join(deps[formula]))
 
     if not VERBOSE and not DEBUG and not QUIET:
-      print("\b"*40, end='')
+      print("\033[2K\033[1G", end='')
 
   except KeyboardInterrupt:
     if formula: print(f"Interrupted. I was processing '{formula}'")
@@ -102,11 +108,10 @@ for formula in formulae:
     if formula: print(f"Errored out. I was processing '{formula}'")
     exit(1)
 
-# outdated_deps - deps from the tap being analyzed that are out of date
-outdated_deps = {formula: list(filter(lambda x: x in outdated, deps[formula])) for formula in outdated}
+# outdated_deps - deps from the tap being analyzed that are outdated
+outdated_deps = {formula: list(filter(lambda x: x in old_versions, deps[formula])) for formula in old_versions}
 
-
-# Sort by the number of outdated dependencies
+# sorted_outdated_deps - outdated_deps sorted by the number of outdated dependencies
 sorted_outdated_deps = sorted(outdated_deps.items(), key = lambda x: len(x[1]))
 
 # Check that there are at least SOME outdated dependencies
@@ -116,12 +121,39 @@ if all(deps[1]  for deps in sorted_outdated_deps):
         All outdated dependencies in '{tap_name}' depend on each other.
         This can't be right. Please report this error to us by creating an issue.""")
 
-separator = '=' * 96
-print(f"{separator}\n{'Formula':40s}|{'Version change':^30s}| (Outdated) Dependencies\n{separator}")
-for element in sorted_outdated_deps:
-  formula = element[0]
-  print(f"{formula:40s}| {outdated[formula][0]:^12s} ~> {outdated[formula][1]:^12s} |", " ".join(element[1]))
-print(separator)
+if SUMMARY:
+  fname_length = list(map(lambda x: len(x[0]), sorted_outdated_deps))
+  old_vers_len = [len(old_versions[f]) for f in old_versions]
+  new_vers_len = [len(new_versions[f]) for f in new_versions]
+  deps_lengths = list(map(lambda x: len(" ".join(x[1]))+1, sorted_outdated_deps))
+
+  col1_len = str(max(fname_length + [7]) + 2) # 7 == len("Formula")
+  col2_len = str(max(old_vers_len + [15]) + 2) # 15 == len("Current version")
+  col3_len = str(max(new_vers_len + [11]) + 2) # 11 == len("New version")
+  col4_len = str(min(max(deps_lengths + [21]), 32) + 2) # 21 == len("Outdated dependencies")
+  separator = '=' * eval(f"{col1_len}+{col2_len}+{col3_len}+{col4_len}+3")
+
+  header = (
+        f"\n{separator}\n"
+        f"{'Formula':{'^' + col1_len}}|"
+        f"{'Current version':{'^' + col2_len}}|"
+        f"{'New version':{'^' + col3_len}}|"
+        f"{'Outdated dependencies':{'^' + col4_len}}"
+        f"\n{separator}"
+      )
+
+  print(header)
+  for element in sorted_outdated_deps:
+    formula = element[0]
+    last_column = " " + " ".join(element[1])
+    table_line = (
+      f"{formula:{col1_len}}|"
+      f"{old_versions[formula]:{'^' + col2_len}}|"
+      f"{new_versions[formula]:{'^' + col3_len}}|"
+      f"{last_column:{col4_len}}"
+        )
+    print(table_line)
+  print(f"{separator}\n")
 
 batches = defaultdict(list)
 previous = 0
@@ -139,6 +171,18 @@ for element in sorted_outdated_deps:
 
 for batch in batches:
   print(f"Batch {batch}:", " ".join(batches[batch]))
+  if batch == 1:
+    print("Please verify that suggested URLs exist before proceeding!")
+    for formula in batches[batch]:
+      pattern = rf'\s*url "([^ ]*{old_versions[formula]}[^ ]*)"'
+      filename = f"{this_tap_folder}/Formula/{formula}.rb"
+      with open(filename, 'r') as fid:
+        for line in fid:
+          match = re.search(pattern, line)
+          if match:
+            old_url = match.group(1)
+            new_url = old_url.replace(old_versions[formula], new_versions[formula], -1)
+            print(f'brew bump-formula-pr --url={new_url} {tap_name}/{formula}')
 
 if DEBUG:
   print(" - [DEBUG]")
