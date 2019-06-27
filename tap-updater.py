@@ -3,6 +3,7 @@
 import argparse
 import os
 import subprocess
+import sys
 
 from glob import glob
 from os.path import splitext
@@ -15,16 +16,20 @@ Determine batches in which it is safe to update packages in a tap.
 """
 
 parser = argparse.ArgumentParser(description=description)
-parser.add_argument('tap', help="Tap you'd like to update packages in.")
+group = parser.add_mutually_exclusive_group()
+group.add_argument("-v", "--verbose", help="Display verbose messages.", action="count", default=0)
+group.add_argument("-q", "--quiet", help="Suppress any intermediate output.", action="store_true")
 parser.add_argument("-d", "--debug", help="Display debugging messages.", action="store_true")
-parser.add_argument("-v", "--verbose", help="Display verbose messages.", action="count", default=0)
-parser.add_argument("--skip", dest='skiplist', help="White-space-separated list of formulae to skip.", nargs='*', default=[])
+parser.add_argument('tap_name', help="Tap you'd like to update packages in.")
+parser.add_argument("-s", "--skip", help="White-space-separated list of formulae to skip.", nargs='+', metavar='formula', default=[])
 args = parser.parse_args()
 
-tap_name = args.tap
-skiplist = args.skiplist
+tap_name = args.tap_name
+skiplist = args.skip
+
 VERBOSE = args.verbose
 DEBUG = args.debug
+QUIET = args.quiet
 
 # Tap folder
 command = ["brew", "--repo", tap_name]
@@ -39,7 +44,7 @@ deps = {}
 
 for formula in formulae:
 
-  print(f"{formula:40s}", end='', flush=True)
+  if not QUIET: print(f"{formula:40s}", end='', flush=True)
   try:
 
     # 1. Skip what has to be skipped
@@ -53,7 +58,9 @@ for formula in formulae:
     stdout = process.stdout.decode("ascii").strip()
 
     # 3. Go to the next formula if the current one is up-to-date
-    if not stdout: print("\b"*40, end=''); continue
+    if not stdout:
+      if not QUIET: print("\b"*40, end='')
+      continue
 
     # 4. Go to the next formula if output is not what we can process
     if " : " not in stdout or " ==> " not in stdout:
@@ -77,7 +84,7 @@ for formula in formulae:
       if not VERBOSE: print("")
       print(" - [DEBUG] dependencies:", ", ".join(deps[formula]))
 
-    if not VERBOSE and not DEBUG:
+    if not VERBOSE and not DEBUG and not QUIET:
       print("\b"*40, end='')
 
   except KeyboardInterrupt:
