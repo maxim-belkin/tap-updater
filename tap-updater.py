@@ -182,7 +182,7 @@ for batch in batches:
           if match:
             old_url = match.group(1)
             new_url = old_url.replace(old_versions[formula], new_versions[formula], -1)
-            print(f'brew bump-formula-pr --url={new_url} {tap_name}/{formula}')
+            print(f'brew bump-formula-pr --no-browse --url={new_url} {tap_name}/{formula}')
 
 if DEBUG:
   print(" - [DEBUG]")
