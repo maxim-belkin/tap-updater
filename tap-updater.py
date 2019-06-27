@@ -6,7 +6,6 @@ import subprocess
 import sys
 
 from glob import glob
-from os.path import splitext
 from pprint import pprint
 
 from collections import defaultdict
@@ -34,10 +33,19 @@ QUIET = args.quiet
 # Tap folder
 command = ["brew", "--repo", tap_name]
 process = subprocess.run(command, capture_output=True)
+
+if process.stderr:
+  print(process.stderr.decode("ascii").strip(), file=sys.stderr)
+  exit(1)
+
 this_tap_folder = process.stdout.decode("ascii").strip()
 
+if not os.path.exists(this_tap_folder):
+  print(f"Error: '{this_tap_folder}' does not exist", file=sys.stderr)
+  exit(1)
+
 os.chdir(f"{this_tap_folder}/Formula")
-formulae = sorted([ splitext( x )[0] for x in glob("*.rb") ])
+formulae = sorted([ os.path.splitext( x )[0] for x in glob("*.rb") ])
 
 outdated = {}
 deps = {}
