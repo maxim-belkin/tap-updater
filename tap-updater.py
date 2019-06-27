@@ -105,7 +105,32 @@ for element in taps_or_formulae:
       exit(1)
 
     formula_file[full_formula_name] = process.stdout.decode("ascii").strip()
+    formulae = formulae.union([full_formula_name])
 
+
+if PROCESS_ALL_FORMULAE:
+  command = ["brew", "deps", "--include-build", "--include-test", "--full-name", "--union", *list(formulae)]
+  process = subprocess.run(command, capture_output=True)
+  extra_formulae = process.stdout.decode("ascii").split()
+  extra_formulae = set([f"homebrew/core/{x}" if x.count("/") == 0 else x for x in extra_formulae])
+
+  for element in extra_formulae:
+    if VERBOSE: print(element)
+    if element.count("/") != 2:
+      print(f"Error: can not process {element}.")
+      exit(1)
+
+    formula_name = element.split("/")[-1]
+    tap_name = "/".join(element.split("/")[:2])
+
+    full_formula_name = f"{tap_name}/{formula_name}"
+    command = ["brew", "formula", full_formula_name]
+    process = subprocess.run(command, capture_output=True)
+    if process.stderr:
+      print(f"Error: can't process {element}:\n", process.stderr.decode("ascii").strip())
+      exit(1)
+
+    formula_file[full_formula_name] = process.stdout.decode("ascii").strip()
     formulae = formulae.union([full_formula_name])
 
 deps = {}
@@ -152,6 +177,7 @@ for formula in formulae:
     # deps - deps (up-to-date and outdated)
     deps[formula] = [f"homebrew/core/{x}" if x.count("/") == 0 else x for x in stdout]
 
+    # Don't analyse formulae from other taps when not required
     if single_tap and not PROCESS_ALL_FORMULAE:
       tap_name = formula.rsplit("/", 1)[0]
       deps[formula] = list(filter(lambda x: x.startswith(tap_name), deps[formula]))
