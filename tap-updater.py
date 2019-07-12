@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 
 import argparse
+import logging
 import os
 import re
 import subprocess
 import sys
-import logging
-
-from glob import glob
-from pprint import pprint
 
 from collections import defaultdict
+from glob import glob
 
 description = """
 Determine batches in which it is safe to update individual formulae and taps.
@@ -62,6 +60,7 @@ formulae = set()
 SINGLE_TAP = len(TAPS_OR_FORMULAE) == 1
 formula_file = {}
 
+# Process command-line arguments
 for element in TAPS_OR_FORMULAE:
   if element in KNOWN_TAPS: # IF: This is a tap we know.
     tap_name = element      # just for convenience...
@@ -71,7 +70,7 @@ for element in TAPS_OR_FORMULAE:
     command = ["brew", "--repo", tap_name]
     process = subprocess.run(command, capture_output=True)
     if process.stderr:
-      logger.critical("%s" % process.stderr.decode("ascii").strip())
+      logger.critical(process.stderr.decode("ascii").strip())
       exit(1)
     this_tap_folder = process.stdout.decode("ascii").strip()
     del command, process
@@ -118,10 +117,10 @@ for element in TAPS_OR_FORMULAE:
       tap_name = "/".join(element.split("/")[:2])
     elif n_slashes == 1:
       # 1 slash -- tap (e.g. linuxbrew/xorg) but it is not tapped
-      logger.warning("%s" % f"'{element}' looks like a tap. Consider tapping it before using 'Tap Updater'.")
+      logger.warning(f"'{element}' looks like a tap. Consider tapping it before using 'Tap Updater'.")
       continue
     else:
-      logger.critical("%s" % f"Can not process '{element}'")
+      logger.critical(f"Can not process '{element}'")
       exit(1)
 
     del n_slashes
@@ -130,7 +129,7 @@ for element in TAPS_OR_FORMULAE:
     command = ["brew", "formula", full_formula_name]
     process = subprocess.run(command, capture_output=True)
     if process.stderr:
-      logger.critical("%s" % f"""Error: can't process {element}:\n{process.stderr.decode("ascii").strip()}""")
+      logger.critical(f"""Error: can't process {element}:\n{process.stderr.decode("ascii").strip()}""")
       exit(1)
 
     formula_file[full_formula_name] = process.stdout.decode("ascii").strip()
@@ -146,12 +145,12 @@ if PROCESS_ALL_FORMULAE:
   for element in extra_formulae:
     if VERBOSE:
       print(f"Adding {element}", end=' ', flush=True)
-      logger.debug("%s" % f"Adding {element}")
+      logger.debug(f"Adding {element}")
 
     if element.count("/") != 2:
       if VERBOSE: print()
       print(f"Error: can not process {element}.")
-      logger.critical("%s" % f"Error: can not process {element}.")
+      logger.critical(f"Error: can not process {element}.")
       exit(1)
 
     formula_name = element.split("/")[-1]
@@ -163,12 +162,12 @@ if PROCESS_ALL_FORMULAE:
     if process.stderr:
       if VERBOSE: print()
       print(f"""Error: can't process {element}:\n{process.stderr.decode("ascii").strip()}""")
-      logger.critical("%s" % f"""Error: can't process {element}:\n{process.stderr.decode("ascii").strip()}""")
+      logger.critical(f"""Error: can't process {element}:\n{process.stderr.decode("ascii").strip()}""")
       exit(1)
 
     location = process.stdout.decode("ascii").strip()
     if full_formula_name in formula_file and  location != formula_file[full_formula_name]:
-      logger.critical("%s" % f"Old location: '{formula_file[full_formula_name]}'\nNew location: '{location}'\n")
+      logger.critical(f"Old location: '{formula_file[full_formula_name]}'\nNew location: '{location}'\n")
       exit(1)
     formula_file[full_formula_name] = location
     formulae = formulae.union([full_formula_name])
@@ -227,7 +226,7 @@ for formula in formulae:
     # deps - deps (up-to-date and outdated)
     deps[formula] = [f"homebrew/core/{x}" if x.count("/") == 0 else x for x in stdout]
 
-    # Don't analyse formulae from other taps when not required
+    # Don't analyze formulae from other taps when not required
     if SINGLE_TAP and not PROCESS_ALL_FORMULAE:
       tap_name = formula.rsplit("/", 1)[0]
       deps[formula] = list(filter(lambda x: x.startswith(tap_name), deps[formula]))
@@ -303,7 +302,7 @@ previous = 0
 
 for element in sorted_outdated_deps:
   deps = element[1]
-  key = len(deps)
+  # key = len(deps)
   if previous and all([dep not in batches[previous] for dep in deps]):
       key = previous
   else:
@@ -314,7 +313,7 @@ for element in sorted_outdated_deps:
 
 for batch in batches:
   print(f"Batch {batch}:", " ".join(batches[batch]))
-  logger.info("%s" % f'Batch {batch}: {" ".join(batches[batch])}')
+  logger.info(f'Batch {batch}: {" ".join(batches[batch])}')
 
 if batches[1]:
   print("\nSuggested commands for updating formulae in Batch 1:\n")
@@ -330,7 +329,7 @@ if batches[1]:
           old_url = match.group(1)
           new_url = old_url.replace(old_versions[formula], new_versions[formula], -1)
           print(f'brew bump-formula-pr --no-browse --url={new_url} {formula}')
-          logger.info("%s" % f'brew bump-formula-pr --no-browse --url={new_url} {formula}')
+          logger.info(f'brew bump-formula-pr --no-browse --url={new_url} {formula}')
 
   print(
     """
