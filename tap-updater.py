@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+import logging
 
 from glob import glob
 from pprint import pprint
@@ -18,90 +19,118 @@ Determine batches in which it is safe to update packages in a tap.
 parser = argparse.ArgumentParser(description=description)
 group = parser.add_mutually_exclusive_group()
 group.add_argument("-v", "--verbose", help="Display verbose messages.", action="count", default=0)
-group.add_argument("-q", "--quiet", help="Suppress any intermediate output.", action="store_true")
+group.add_argument("-q", "--quiet", help="Suppress any intermediate output.", action="count", default=0)
 parser.add_argument("-d", "--debug", help="Display debugging messages.", action="store_true")
-parser.add_argument('taps_or_formulae', help="Taps or formulae you'd like to update.", nargs='+')
-parser.add_argument('-a', '--all', help="Don't limit analysis to formulae in a single tap even if only one tap is provided", action="store_true")
+parser.add_argument('-a', '--all', help="Don't limit analysis to formulae in a single tap even if only one tap is specified.", action="store_true")
 parser.add_argument("-s", "--skip", help="White-space-separated list of formulae to skip.", nargs='+', metavar='formula', default=[])
-parser.add_argument("--no-summary", help="Hide summary table (Default: False)", action="store_true")
+parser.add_argument("--no-summary", help="Hide summary table (Default: False).", action="store_true")
+parser.add_argument("--log-file", help="Log file name (Default: tap_updater.log).", action="store", metavar='file', default='tap_updater.log')
+parser.add_argument('taps_or_formulae', help="Taps or formulae you'd like to update.", nargs='+')
 args = parser.parse_args()
 
-taps_or_formulae = args.taps_or_formulae
-skiplist = args.skip
-
-VERBOSE = args.verbose
+# Process command-line arguments
+TAPS_OR_FORMULAE = args.taps_or_formulae
+SKIPLIST = args.skip
+VERBOSE = args.verbose # 0 - produce standard output; 1 - produce a bit more output; 2 - be superverbose
 DEBUG = args.debug
 QUIET = args.quiet
-SUMMARY = not args.no_summary
+NOSUMMARY = args.no_summary
 PROCESS_ALL_FORMULAE = args.all
+LOGFILE = args.log_file
 
-# 'known_taps': taps that we know of
+logger = logging.getLogger("TAP UPDATER")
+logger.level = 1
+formatter = logging.Formatter('%(levelname)-8s | %(asctime)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logfile = logging.FileHandler(LOGFILE)
+logfile.level = 10 # DEBUG for now
+logfile.formatter = formatter
+# console = logging.StreamHandler()
+# console.level = 50 # CRITICAL only...
+# console.formatter = formatter
+logger.addHandler(logfile)
+# logger.addHandler(console)
+
+logger.info("Starting TAP UPDATER")
+
+# 'KNOWN_TAPS': taps that we know of
 command = ["brew", "tap"]
 process = subprocess.run(command, capture_output=True)
-known_taps = process.stdout.decode("ascii").split()
+KNOWN_TAPS = process.stdout.decode("ascii").split()
 del process, command
 
 formulae = set()
-single_tap = len(taps_or_formulae) == 1
+SINGLE_TAP = len(TAPS_OR_FORMULAE) == 1
 formula_file = {}
 
-for element in taps_or_formulae:
+for element in TAPS_OR_FORMULAE:
+  if element in KNOWN_TAPS: # IF: This is a tap we know.
+    tap_name = element      # just for convenience...
 
-  if element in known_taps:
-    # IF: This is a tap we know.
-
-    tap_name = element
-
-    # Tap folder
+    # 1. Detect tap location
+    # CREATED VARIABLE: 'this_tap_folder'
     command = ["brew", "--repo", tap_name]
     process = subprocess.run(command, capture_output=True)
     if process.stderr:
-      print(process.stderr.decode("ascii").strip(), file=sys.stderr)
+      logger.critical("%s" % process.stderr.decode("ascii").strip())
       exit(1)
-
     this_tap_folder = process.stdout.decode("ascii").strip()
-    if not os.path.exists(this_tap_folder):
-      print(f"Error: '{this_tap_folder}' does not exist", file=sys.stderr)
-      exit(1)
+    del command, process
 
-    if os.path.exists(f"{this_tap_folder}/Formula"):
-      os.chdir(f"{this_tap_folder}/Formula")
-    else:
-      os.chdir(this_tap_folder)
+    # Formulae can be stored in different subfolders, if at all.
+    # User specified a tap, so we want to get a list of all 
+    # formulae in that tap.
+    for suffix in ["Formula", "HomebrewFormula", ""]:
+      if os.path.exists(f"{this_tap_folder}/{suffix}"):
+        os.chdir(f"{this_tap_folder}/{suffix}")
+        break
+    del suffix
 
+    # Find all *.rb files
     rbfiles = glob("*.rb")
+
+    # Remove .rb from filenames
     names = (os.path.splitext( rbfile )[0] for rbfile in rbfiles)
+
+    # Prefix tap_name to formulae names
     full_names = list(f"{tap_name}/{name}" for name in names)
 
+    # Add formulae from this tap to the list of formulae to check
     formulae = formulae.union(full_names)
-    # tap[f] = tap_name for f in addition
 
     for full_name, rbfile in zip(full_names, rbfiles):
       formula_file[full_name] = f"{os.path.abspath('.')}/{rbfile}"
 
-  else:
-    # ELSE:
-    # This is not a tap we know...
-    # So we assume that this is a formula.
-    # We (could but) don't want to tap any new taps
+    del rbfiles, names, full_names, tap_name
 
-    if element.count("/") == 0:
+  else: # This is not a tap we know...
+
+    # We assume that this is a formula.
+    # We (could but) don't tap any new taps
+
+    n_slashes = element.count("/")
+    if n_slashes == 0:
       # 0 slashes -- "core" formula    (e.g.: gcc)
       formula_name = element
       tap_name = "homebrew/core"
-    elif element.count("/") == 2:
+    elif n_slashes == 2:
       # 2 slashes -- full-name formula (e.g.: linuxbrew/xorg/mesa)
       formula_name = element.split("/")[-1]
       tap_name = "/".join(element.split("/")[:2])
-    else:
-      print(f"Skipping {element} because its name is suspicious...")
+    elif n_slashes == 1:
+      # 1 slash -- tap (e.g. linuxbrew/xorg) but it is not tapped
+      logger.warning("%s" % f"'{element}' looks like a tap. Consider tapping it before using 'Tap Updater'.")
       continue
+    else:
+      logger.critical("%s" % f"Can not process '{element}'")
+      exit(1)
+
+    del n_slashes
 
     full_formula_name = f"{tap_name}/{formula_name}"
     command = ["brew", "formula", full_formula_name]
     process = subprocess.run(command, capture_output=True)
     if process.stderr:
-      print(f"Error: can't process {element}:\n", process.stderr.decode("ascii").strip())
+      logger.critical("%s" % f"""Error: can't process {element}:\n{process.stderr.decode("ascii").strip()}""")
       exit(1)
 
     formula_file[full_formula_name] = process.stdout.decode("ascii").strip()
@@ -115,9 +144,14 @@ if PROCESS_ALL_FORMULAE:
   extra_formulae = set([f"homebrew/core/{x}" if x.count("/") == 0 else x for x in extra_formulae])
 
   for element in extra_formulae:
-    if VERBOSE: print(element)
+    if VERBOSE:
+      print(f"Adding {element}", end=' ', flush=True)
+      logger.debug("%s" % f"Adding {element}")
+
     if element.count("/") != 2:
+      if VERBOSE: print()
       print(f"Error: can not process {element}.")
+      logger.critical("%s" % f"Error: can not process {element}.")
       exit(1)
 
     formula_name = element.split("/")[-1]
@@ -127,11 +161,20 @@ if PROCESS_ALL_FORMULAE:
     command = ["brew", "formula", full_formula_name]
     process = subprocess.run(command, capture_output=True)
     if process.stderr:
-      print(f"Error: can't process {element}:\n", process.stderr.decode("ascii").strip())
+      if VERBOSE: print()
+      print(f"""Error: can't process {element}:\n{process.stderr.decode("ascii").strip()}""")
+      logger.critical("%s" % f"""Error: can't process {element}:\n{process.stderr.decode("ascii").strip()}""")
       exit(1)
 
-    formula_file[full_formula_name] = process.stdout.decode("ascii").strip()
+    location = process.stdout.decode("ascii").strip()
+    if full_formula_name in formula_file and  location != formula_file[full_formula_name]:
+      logger.critical("%s" % f"Old location: '{formula_file[full_formula_name]}'\nNew location: '{location}'\n")
+      exit(1)
+    formula_file[full_formula_name] = location
     formulae = formulae.union([full_formula_name])
+
+    # Erase current line
+    if not QUIET: print("\033[2K\033[1G", end='')
 
 deps = {}
 old_versions = {}
@@ -141,12 +184,16 @@ for formula in formulae:
 
   if not QUIET: print(formula, end=' ', flush=True)
 
+  # Using 'try/except' to catch interrupts
   try:
 
     # 1. Skip what has to be skipped
-    if formula in skiplist:
+    if formula in SKIPLIST:
       if VERBOSE: print("skipping")
+      logger.debug("Skipping %s" % formula)
       continue
+
+    # logger.debug("Processing %s" % formula)
 
     # 2. Check if there is a new version of the formula
     command = ["brew", "livecheck", "-n", formula]
@@ -154,7 +201,7 @@ for formula in formulae:
     stdout = process.stdout.decode("ascii").strip()
 
     # 3. Go to the next formula if the current one is up-to-date
-    # For all sorcery see:
+    # Sorcery is described here:
     # https://en.m.wikipedia.org/wiki/ANSI_escape_code#CSI_sequences
     if not stdout:
       if not QUIET: print("\033[2K\033[1G", end='')
@@ -162,13 +209,16 @@ for formula in formulae:
 
     # 4. Go to the next formula if output is not what we can process
     if " : " not in stdout or " ==> " not in stdout:
-      if VERBOSE: print("Can't process output of 'brew livecheck'")
+      if VERBOSE: print("Can't process output of 'brew livecheck'", file=sys.stderr)
+      logger.warning("Can't process output of 'brew livecheck'")
       continue
 
     # 5. Capture old and new versions
     old_versions[formula], new_versions[formula] = stdout.split(" : ")[1].split(' ==> ')
 
-    if VERBOSE: print(f"{old_versions[formula]} ~> {new_versions[formula]}")
+    if VERBOSE:
+      print("Found update:", old_versions[formula], "=>", new_versions[formula])
+      logger.info("Found update for %s: %s => %s" % (formula, old_versions[formula], new_versions[formula]))
 
     command = ["brew", "deps", "--include-build", "--include-test", "--full-name", formula]
     process = subprocess.run(command, capture_output=True)
@@ -178,13 +228,14 @@ for formula in formulae:
     deps[formula] = [f"homebrew/core/{x}" if x.count("/") == 0 else x for x in stdout]
 
     # Don't analyse formulae from other taps when not required
-    if single_tap and not PROCESS_ALL_FORMULAE:
+    if SINGLE_TAP and not PROCESS_ALL_FORMULAE:
       tap_name = formula.rsplit("/", 1)[0]
       deps[formula] = list(filter(lambda x: x.startswith(tap_name), deps[formula]))
 
     if DEBUG and deps[formula]:
       if not VERBOSE: print("")
-      print(f"DEBUG deps[{formula}]:", ", ".join(deps[formula]))
+      print(f"Dependencies:", ", ".join(deps[formula]))
+      logger.debug("Dependencies: %s" % ", ".join(deps[formula]))
 
     if not VERBOSE and not DEBUG and not QUIET:
       print("\033[2K\033[1G", end='')
@@ -209,7 +260,7 @@ if all(deps[1]  for deps in sorted_outdated_deps):
         All outdated dependencies in '{tap_name}' depend on each other.
         This can't be right. Please report this error to us by creating an issue.""")
 
-if SUMMARY:
+if not NOSUMMARY:
   fname_length = list(map(lambda x: len(x[0]), sorted_outdated_deps))
   old_vers_len = [len(old_versions[f]) for f in old_versions]
   new_vers_len = [len(new_versions[f]) for f in new_versions]
@@ -222,7 +273,7 @@ if SUMMARY:
   separator = '=' * eval(f"{col1_len}+{col2_len}+{col3_len}+{col4_len}+3")
 
   header = (
-        f"\n{separator}\n"
+        f"{separator}\n"
         f"{'Formula':{'^' + col1_len}}|"
         f"{'Current version':{'^' + col2_len}}|"
         f"{'New version':{'^' + col3_len}}|"
@@ -230,7 +281,9 @@ if SUMMARY:
         f"\n{separator}"
       )
 
-  print(header)
+  print("\n" + header)
+  for x in header.split("\n"): logger.info(x)
+
   for element in sorted_outdated_deps:
     formula = element[0]
     last_column = " " + " ".join(element[1])
@@ -241,7 +294,9 @@ if SUMMARY:
       f"{last_column:{col4_len}}"
         )
     print(table_line)
+    logger.info(table_line)
   print(f"{separator}\n")
+  logger.info(f"{separator}")
 
 batches = defaultdict(list)
 previous = 0
@@ -259,9 +314,11 @@ for element in sorted_outdated_deps:
 
 for batch in batches:
   print(f"Batch {batch}:", " ".join(batches[batch]))
+  logger.info("%s" % f'Batch {batch}: {" ".join(batches[batch])}')
 
 if batches[1]:
   print("\nSuggested commands for updating formulae in Batch 1:\n")
+  logger.info("Suggested commands for updating formulae in Batch 1:")
   for formula in batches[1]:
     pattern = rf'\s*url "([^ ]*{old_versions[formula]}[^ ]*)"'
     #filename = f"{this_tap_folder}/Formula/{formula}.rb"
@@ -272,14 +329,13 @@ if batches[1]:
         if match:
           old_url = match.group(1)
           new_url = old_url.replace(old_versions[formula], new_versions[formula], -1)
-          print(f'brew bump-formula-pr --no-browse --url={new_url} {tap_name}/{formula}')
+          print(f'brew bump-formula-pr --no-browse --url={new_url} {formula}')
+          logger.info("%s" % f'brew bump-formula-pr --no-browse --url={new_url} {formula}')
 
-  print((
-    "\nPlease verify that URLs exist before executing the above commands! "
-    "Consider adding 'version \"x.y.z\" to the formula if detected 'new_version' is likely "
-    " to cause problems for Homebrew version detection mechanism"
-    ))
-
-if DEBUG:
-  print(" - [DEBUG]")
-  pprint(sorted_outdated_deps)
+  print(
+    """
+    | Please verify that URLs exist before executing the above commands!
+    | Consider adding 'version \"x.y.z\" to the formula if detected 'new_version' is likely
+    | to cause problems for Homebrew version detection mechanism.
+    """
+    )
