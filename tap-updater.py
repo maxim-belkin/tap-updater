@@ -13,7 +13,7 @@ from pprint import pprint
 from collections import defaultdict
 
 description = """
-Determine batches in which it is safe to update packages in a tap.
+Determine batches in which it is safe to update individual formulae and taps.
 """
 
 parser = argparse.ArgumentParser(description=description)
