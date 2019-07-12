@@ -6,10 +6,25 @@ in a Homebrew tap.
 
 ## How to use
 
-Execute the script followed by the tap name, for example, like so:
+Tap Updater can be used to figure out the order in which to update formulae
+in a single tap:
 
 ```sh
 ./tap-updater.py linuxbrew/xorg
+```
+
+Or it can be used to figure out the order in which to update a single formula
+with all of its (outdated) dependencies:
+
+```sh
+./tap-updater.py linuxbrew/xorg/mesa
+```
+
+By default, Tap Updater assumes that dependencies from other taps are up-to-date.
+You can instruct Tap Updater to check all dependencies regardless of the tap they're in with `-a` / `--all` flag:
+
+```sh
+./tap-updater.py -a linuxbrew/xorg/mesa
 ```
 
 To skip some formulae in a tap from analysis, use `--skip` flag
