@@ -26,8 +26,16 @@ Tap Updater can be used to figure out the order in which to update...
 ./tap-updater.py -a linuxbrew/xorg/mesa
 ```
 
+4. Currently installed formulae:
+
+```sh
+./tap-updater.py $(brew list)
+```
+
 ## Additional arguments
 
+
+### `-s` | `--skip`
 To exclude formulae, use `-s` or `--skip` flag followed by the formulae you'd like to skip.
 Note, because `--skip` accepts arbitrary number of parameters, specify it 
 AFTER the formulae and taps you'd like to process.
@@ -35,6 +43,30 @@ AFTER the formulae and taps you'd like to process.
 ```sh
 ./tap-updater.py linuxbrew/xorg --skip mesa libvai libvdpau-va-gl
 ```
+
+### `-v` | `--verbose
+
+Enable verbose output. Mutually exclusive with `-q` | `--quiet`.
+
+### `-q` | `--quiet
+
+Silence any output. Mutually exclusive with `-v` | `--verbose`.
+
+### `-d` | `--debug`
+
+Enable output of additional low-level information useful for debugging issues.
+
+### `-h` | `--help`
+
+Display help/usage information.
+
+### `--no-summary`
+
+Don't display summary table at the end of analysis.
+
+### `--log-file filename`
+
+Specify name of the log file (Default: `tap_updater.log`).
 
 ## Examples:
 
