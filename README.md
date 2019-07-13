@@ -41,14 +41,14 @@ Note, because `--skip` accepts arbitrary number of parameters, specify it
 AFTER the formulae and taps you'd like to process.
 
 ```sh
-./tap-updater.py linuxbrew/xorg --skip mesa libvai libvdpau-va-gl
+./tap-updater.py linuxbrew/xorg --skip linuxbrew/xorg/mesa linuxbrew/xorg/libva linuxbrew/xorg/libvdpau-va-gl
 ```
 
-### `-v` | `--verbose
+### `-v` | `--verbose`
 
 Enable verbose output. Mutually exclusive with `-q` | `--quiet`.
 
-### `-q` | `--quiet
+### `-q` | `--quiet`
 
 Silence any output. Mutually exclusive with `-v` | `--verbose`.
 
