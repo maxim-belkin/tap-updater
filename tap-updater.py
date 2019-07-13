@@ -33,7 +33,7 @@ VERBOSE = args.verbose # 0 - produce standard output; 1 - produce a bit more out
 DEBUG = args.debug
 QUIET = args.quiet
 NOSUMMARY = args.no_summary
-PROCESS_ALL_FORMULAE = args.all
+PROCESS_ALL_TAPS = args.all
 LOGFILE = args.log_file
 
 logger = logging.getLogger("TAP UPDATER")
@@ -50,20 +50,21 @@ logger.addHandler(logfile)
 
 logger.info("Starting TAP UPDATER")
 
-# 'KNOWN_TAPS': taps that we know of
+# 'KNOWN_TAPS': taps that we know
 command = ["brew", "tap"]
 process = subprocess.run(command, capture_output=True)
 KNOWN_TAPS = process.stdout.decode("ascii").split()
 del process, command
 
 formulae = set()
-SINGLE_TAP = len(TAPS_OR_FORMULAE) == 1
 formula_file = {}
+# SINGLE_TAP = len(TAPS_OR_FORMULAE) == 1
+TAP_NAME = None
 
 # Process command-line arguments
 for element in TAPS_OR_FORMULAE:
   if element in KNOWN_TAPS: # IF: This is a tap we know.
-    tap_name = element      # just for convenience...
+    tap_name = element
 
     # 1. Detect tap location
     # CREATED VARIABLE: 'this_tap_folder'
@@ -86,11 +87,12 @@ for element in TAPS_OR_FORMULAE:
 
     # Find all *.rb files
     rbfiles = glob("*.rb")
+    if not rbfiles: continue # I mean, who would do that?... but, you know,...
 
     # Remove .rb from filenames
     names = (os.path.splitext( rbfile )[0] for rbfile in rbfiles)
 
-    # Prefix tap_name to formulae names
+    # Prefix tap name to formulae names
     full_names = list(f"{tap_name}/{name}" for name in names)
 
     # Add formulae from this tap to the list of formulae to check
@@ -99,7 +101,7 @@ for element in TAPS_OR_FORMULAE:
     for full_name, rbfile in zip(full_names, rbfiles):
       formula_file[full_name] = f"{os.path.abspath('.')}/{rbfile}"
 
-    del rbfiles, names, full_names, tap_name
+    del rbfiles, names, full_names
 
   else: # This is not a tap we know...
 
@@ -107,6 +109,7 @@ for element in TAPS_OR_FORMULAE:
     # We (could but) don't tap any new taps
 
     n_slashes = element.count("/")
+
     if n_slashes == 0:
       # 0 slashes -- "core" formula    (e.g.: gcc)
       formula_name = element
@@ -135,29 +138,44 @@ for element in TAPS_OR_FORMULAE:
     formula_file[full_formula_name] = process.stdout.decode("ascii").strip()
     formulae = formulae.union([full_formula_name])
 
+  # this is after if/else and inside 'for element in'
+  logger.debug(f"""Tap: {tap_name}""")
+  logger.debug(f"""Formulae: {", ".join(formulae)}""")
 
-if PROCESS_ALL_FORMULAE:
-  command = ["brew", "deps", "--include-build", "--include-test", "--full-name", "--union", *list(formulae)]
-  process = subprocess.run(command, capture_output=True)
-  extra_formulae = process.stdout.decode("ascii").split()
-  extra_formulae = set([f"homebrew/core/{x}" if x.count("/") == 0 else x for x in extra_formulae])
+  if not PROCESS_ALL_TAPS:
+    if TAP_NAME is not None and TAP_NAME != tap_name:
+      logger.critical(f"Error processing {element}: Can't process formulae from different taps without '-a' flag.")
+      exit(1)
+    TAP_NAME = tap_name
 
-  for element in extra_formulae:
+if len(formulae) == 0:
+  logger.critical("No formulae to process.")
+  exit(1)
+
+#######################################################################################
+
+logger.info("Obtaining dependencies (including those necessary for building and testing)")
+command = ["brew", "deps", "--include-build", "--include-test", "--full-name", "--union", *list(formulae)]
+process = subprocess.run(command, capture_output=True)
+extra_formulae = process.stdout.decode("ascii").split()
+extra_formulae = set([f"homebrew/core/{x}" if x.count("/") == 0 else x for x in extra_formulae])
+
+if not PROCESS_ALL_TAPS:
+  logger.info(f"Filtering out dependencies from taps other than {TAP_NAME}")
+  logger.info(f"Formulae before filtering: {len(extra_formulae)}")
+  extra_formulae = list(filter(lambda x: x.startswith(TAP_NAME), extra_formulae))
+  logger.info(f"Formulae after filtering: {len(extra_formulae)}")
+
+
+for element in extra_formulae:
     if VERBOSE:
       print(f"Adding {element}", end=' ', flush=True)
       logger.debug(f"Adding {element}")
 
-    if element.count("/") != 2:
-      if VERBOSE: print()
-      print(f"Error: can not process {element}.")
-      logger.critical(f"Error: can not process {element}.")
-      exit(1)
-
     formula_name = element.split("/")[-1]
     tap_name = "/".join(element.split("/")[:2])
 
-    full_formula_name = f"{tap_name}/{formula_name}"
-    command = ["brew", "formula", full_formula_name]
+    command = ["brew", "formula", element]
     process = subprocess.run(command, capture_output=True)
     if process.stderr:
       if VERBOSE: print()
@@ -166,23 +184,26 @@ if PROCESS_ALL_FORMULAE:
       exit(1)
 
     location = process.stdout.decode("ascii").strip()
-    if full_formula_name in formula_file and  location != formula_file[full_formula_name]:
-      logger.critical(f"Old location: '{formula_file[full_formula_name]}'\nNew location: '{location}'\n")
+    if element in formula_file and  location != formula_file[element]:
+      logger.critical(f"Old location: '{formula_file[element]}'\nNew location: '{location}'\n")
       exit(1)
-    formula_file[full_formula_name] = location
-    formulae = formulae.union([full_formula_name])
+    formula_file[element] = location
+    formulae = formulae.union([element])
 
     # Erase current line
     if not QUIET: print("\033[2K\033[1G", end='')
+
+
+#### Done adding additional dependencies
 
 deps = {}
 old_versions = {}
 new_versions = {}
 
+# Now 'formulae' includes formulae (from taps or individual)
+# specified on the command line as well as all dependencies.
 for formula in formulae:
-
-  if not QUIET: print(formula, end=' ', flush=True)
-
+  if not QUIET: print(f"Checking {formula}...", end=' ', flush=True)
   # Using 'try/except' to catch interrupts
   try:
 
@@ -216,18 +237,20 @@ for formula in formulae:
     old_versions[formula], new_versions[formula] = stdout.split(" : ")[1].split(' ==> ')
 
     if VERBOSE:
-      print("Found update:", old_versions[formula], "=>", new_versions[formula])
+      print("new version found:", old_versions[formula], "=>", new_versions[formula])
       logger.info("Found update for %s: %s => %s" % (formula, old_versions[formula], new_versions[formula]))
 
+    # Find dependencies of the current formula
     command = ["brew", "deps", "--include-build", "--include-test", "--full-name", formula]
     process = subprocess.run(command, capture_output=True)
     stdout = process.stdout.decode("ascii").split()
+    del command, process
 
     # deps - deps (up-to-date and outdated)
     deps[formula] = [f"homebrew/core/{x}" if x.count("/") == 0 else x for x in stdout]
 
-    # Don't analyze formulae from other taps when not required
-    if SINGLE_TAP and not PROCESS_ALL_FORMULAE:
+    # Don't analyze dependencies from other taps when not required
+    if not PROCESS_ALL_TAPS:
       tap_name = formula.rsplit("/", 1)[0]
       deps[formula] = list(filter(lambda x: x.startswith(tap_name), deps[formula]))
 
@@ -254,10 +277,13 @@ sorted_outdated_deps = sorted(outdated_deps.items(), key = lambda x: len(x[1]))
 
 # Check that there are at least SOME outdated dependencies
 # that don't depend on other outdated dependencies
-if all(deps[1]  for deps in sorted_outdated_deps):
-  print(f"""Something is not right:
-        All outdated dependencies in '{tap_name}' depend on each other.
-        This can't be right. Please report this error to us by creating an issue.""")
+if all(d[1]  for d in sorted_outdated_deps):
+  message = f"""\
+      Something is not right:
+      All outdated dependencies in depend on each other.
+      This can't be right. Please report this error to us by creating an issue."""
+  print(message, file=sys.stderr)
+  for x in message.split("\n"): logger.error(x)
 
 if not NOSUMMARY:
   fname_length = list(map(lambda x: len(x[0]), sorted_outdated_deps))
@@ -334,7 +360,7 @@ if batches[1]:
   print(
     """
     | Please verify that URLs exist before executing the above commands!
-    | Consider adding 'version \"x.y.z\" to the formula if detected 'new_version' is likely
+    | Consider adding 'version \"x.y.z\"' to the formula if detected 'new_version' is likely
     | to cause problems for Homebrew version detection mechanism.
     """
     )
