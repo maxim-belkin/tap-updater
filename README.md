@@ -6,54 +6,85 @@ in a Homebrew tap.
 
 ## How to use
 
-Tap Updater can be used to figure out the order in which to update formulae
-in a single tap:
+Tap Updater can be used to figure out the order in which to update...
+
+1. Formulae in a single tap:
 
 ```sh
 ./tap-updater.py linuxbrew/xorg
 ```
 
-Or it can be used to figure out the order in which to update a single formula
-with all of its (outdated) dependencies:
+2. A formula with all of its (outdated) dependencies from the same tap:
 
 ```sh
 ./tap-updater.py linuxbrew/xorg/mesa
 ```
 
-By default, Tap Updater assumes that dependencies from other taps are up-to-date.
-You can instruct Tap Updater to check all dependencies regardless of the tap they're in with `-a` / `--all` flag:
+3. A formula with all of its (outdated) dependencies from any tap:
 
 ```sh
 ./tap-updater.py -a linuxbrew/xorg/mesa
 ```
 
-To skip some formulae in a tap from analysis, use `--skip` flag
-followed by the formulae you'd like to skip:
+## Additional arguments
+
+To exclude formulae, use `-s` or `--skip` flag followed by the formulae you'd like to skip.
+Note, because `--skip` accepts arbitrary number of parameters, specify it 
+AFTER the formulae and taps you'd like to process.
 
 ```sh
 ./tap-updater.py linuxbrew/xorg --skip mesa libvai libvdpau-va-gl
 ```
 
-Here is an example of output produced by Tap Updater:
+## Examples:
+
+1. Updating formulae in 'linuxbrew/extra' tap only
+```
+$ ./tap-updater.py linuxbrew/extra
+
+=====================================================================================
+           Formula           | Current version | New version | Outdated dependencies 
+=====================================================================================
+linuxbrew/extra/singularity  |      2.6.0      | 3.3.0-rc.1  |                       
+linuxbrew/extra/strace       |       5.1       |     5.2     |                       
+=====================================================================================
+
+Batch 1: linuxbrew/extra/singularity linuxbrew/extra/strace
+
+Suggested commands for updating formulae in Batch 1:
+
+brew bump-formula-pr --no-browse --url=https://github.com/singularityware/singularity/releases/download/3.3.0-rc.1/singularity-3.3.0-rc.1.tar.gz linuxbrew/extra/singularity
+brew bump-formula-pr --no-browse --url=https://github.com/strace/strace/releases/download/v5.2/strace-5.2.tar.xz linuxbrew/extra/strace
+
+    | Please verify that URLs exist before executing the above commands!
+    | Consider adding 'version "x.y.z"' to the formula if detected 'new_version' is likely
+    | to cause problems for Homebrew version detection mechanism.
+```
+
+2. Updating formulae in 'linuxbrew/extra' tap and its dependencies in all other taps,
+but skipping `linuxbrew/extra/singularity`.
 
 ```
-$ python3 tap-updater.py  linuxbrew/extra
+$ ./tap-updater.py linuxbrew/extra --all --skip linuxbrew/extra/singularity
 
-=====================================================================
-   Formula   | Current version | New version | Outdated dependencies
-=====================================================================
-aws-vault    |      4.6.0      |    4.6.1    |
-lm_sensors   |      3.4.0      |    3-5-0    |
-singularity  |      2.6.0      | 3.3.0-rc.1  |
-strace       |      4.24       |     5.1     |
-=====================================================================
+================================================================================
+        Formula         | Current version | New version | Outdated dependencies
+================================================================================
+linuxbrew/extra/strace  |       5.1       |     5.2     |
+homebrew/core/nettle    |      3.4.1      |    3.5.1    |
+homebrew/core/sqlite    |     3.28.0      |   3.29.0    |
+================================================================================
 
-Batch 1: aws-vault lm_sensors singularity strace
-Please verify that suggested URLs exist before proceeding!
-brew bump-formula-pr --url=https://github.com/99designs/aws-vault/archive/v4.6.1.tar.gz linuxbrew/extra/aws-vault
-brew bump-formula-pr --url=https://ftp.gwdg.de/pub/linux/misc/lm-sensors/lm_sensors-3-5-0.tar.bz2 linuxbrew/extra/lm_sensors
-brew bump-formula-pr --url=https://github.com/singularityware/singularity/releases/download/3.3.0-rc.1/singularity-3.3.0-rc.1.tar.gz linuxbrew/extra/singularity
-brew bump-formula-pr --url=https://github.com/strace/strace/releases/download/v5.1/strace-5.1.tar.xz linuxbrew/extra/strace
+Batch 1: linuxbrew/extra/strace homebrew/core/nettle homebrew/core/sqlite
+
+Suggested commands for updating formulae in Batch 1:
+
+brew bump-formula-pr --no-browse --url=https://github.com/strace/strace/releases/download/v5.2/strace-5.2.tar.xz linuxbrew/extra/strace
+brew bump-formula-pr --no-browse --url=https://ftp.gnu.org/gnu/nettle/nettle-3.5.1.tar.gz homebrew/core/nettle
+
+    | Please verify that URLs exist before executing the above commands!
+    | Consider adding 'version "x.y.z"' to the formula if detected 'new_version' is likely
+    | to cause problems for Homebrew version detection mechanism.
 ```
 
 Tap Updater outputs "batches" of formulae in which packages can be updated.
