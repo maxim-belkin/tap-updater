@@ -8,29 +8,29 @@ in a Homebrew tap.
 
 Tap Updater can be used to figure out the order in which to update...
 
-1. Formulae in a single tap:
+### formulae in a single tap:
 
-```sh
-./tap-updater.py linuxbrew/xorg
-```
+    ```sh
+    ./tap-updater.py linuxbrew/xorg
+    ```
 
-2. A formula with all of its (outdated) dependencies from the same tap:
+### a formula with all of its (outdated) dependencies from the same tap:
 
-```sh
-./tap-updater.py linuxbrew/xorg/mesa
-```
+    ```sh
+    ./tap-updater.py linuxbrew/xorg/mesa
+    ```
 
-3. A formula with all of its (outdated) dependencies from any tap:
+### a formula with all of its (outdated) dependencies from any tap:
 
-```sh
-./tap-updater.py -a linuxbrew/xorg/mesa
-```
+    ```sh
+    ./tap-updater.py -a linuxbrew/xorg/mesa
+    ```
 
-4. Currently installed formulae:
+### all currently installed formulae:
 
-```sh
-./tap-updater.py $(brew list)
-```
+    ```sh
+    ./tap-updater.py $(brew list)
+    ```
 
 ## Additional arguments
 
@@ -38,11 +38,11 @@ Tap Updater can be used to figure out the order in which to update...
 ### `-s` | `--skip`
 To exclude formulae, use `-s` or `--skip` flag followed by the formulae you'd like to skip.
 Note, because `--skip` accepts arbitrary number of parameters, specify it 
-AFTER the formulae and taps you'd like to process.
+AFTER the formulae and taps you'd like to process. Example:
 
-```sh
-./tap-updater.py linuxbrew/xorg --skip linuxbrew/xorg/mesa linuxbrew/xorg/libva linuxbrew/xorg/libvdpau-va-gl
-```
+    ```sh
+    ./tap-updater.py linuxbrew/xorg --skip linuxbrew/xorg/mesa linuxbrew/xorg/libva linuxbrew/xorg/libvdpau-va-gl
+    ```
 
 ### `-v` | `--verbose`
 
@@ -64,60 +64,65 @@ Display help/usage information.
 
 Don't display summary table at the end of analysis.
 
-### `--log-file filename`
+### `--log-file`
 
-Specify name of the log file (Default: `tap_updater.log`).
+Specify name of the log file (Default: `tap_updater.log`). Example:
 
-## Examples:
+    ```sh
+    ./tap-updater.py --log-file xorg.log linuxbrew/xorg
+    ```
 
-1. Updating formulae in 'linuxbrew/extra' tap only
-```
-$ ./tap-updater.py linuxbrew/extra
+## Examples
 
-=====================================================================================
-           Formula           | Current version | New version | Outdated dependencies 
-=====================================================================================
-linuxbrew/extra/singularity  |      2.6.0      | 3.3.0-rc.1  |                       
-linuxbrew/extra/strace       |       5.1       |     5.2     |                       
-=====================================================================================
+### Process (all) formulae in a tap (`linuxbrew/extra`):
 
-Batch 1: linuxbrew/extra/singularity linuxbrew/extra/strace
+    ```
+    $ ./tap-updater.py linuxbrew/extra
 
-Suggested commands for updating formulae in Batch 1:
+    =====================================================================================
+               Formula           | Current version | New version | Outdated dependencies 
+    =====================================================================================
+    linuxbrew/extra/singularity  |      2.6.0      | 3.3.0-rc.1  |                       
+    linuxbrew/extra/strace       |       5.1       |     5.2     |                       
+    =====================================================================================
 
-brew bump-formula-pr --no-browse --url=https://github.com/singularityware/singularity/releases/download/3.3.0-rc.1/singularity-3.3.0-rc.1.tar.gz linuxbrew/extra/singularity
-brew bump-formula-pr --no-browse --url=https://github.com/strace/strace/releases/download/v5.2/strace-5.2.tar.xz linuxbrew/extra/strace
+    Batch 1: linuxbrew/extra/singularity linuxbrew/extra/strace
 
-    | Please verify that URLs exist before executing the above commands!
-    | Consider adding 'version "x.y.z"' to the formula if detected 'new_version' is likely
-    | to cause problems for Homebrew version detection mechanism.
-```
+    Suggested commands for updating formulae in Batch 1:
 
-2. Updating formulae in 'linuxbrew/extra' tap and its dependencies in all other taps,
-but skipping `linuxbrew/extra/singularity`.
+    brew bump-formula-pr --no-browse --url=https://github.com/singularityware/singularity/releases/download/3.3.0-rc.1/singularity-3.3.0-rc.1.tar.gz linuxbrew/extra/singularity
+    brew bump-formula-pr --no-browse --url=https://github.com/strace/strace/releases/download/v5.2/strace-5.2.tar.xz linuxbrew/extra/strace
 
-```
-$ ./tap-updater.py linuxbrew/extra --all --skip linuxbrew/extra/singularity
+        | Please verify that URLs exist before executing the above commands!
+        | Consider adding 'version "x.y.z"' to the formula if detected 'new_version' is likely
+        | to cause problems for Homebrew version detection mechanism.
+    ```
 
-================================================================================
-        Formula         | Current version | New version | Outdated dependencies
-================================================================================
-linuxbrew/extra/strace  |       5.1       |     5.2     |
-homebrew/core/nettle    |      3.4.1      |    3.5.1    |
-homebrew/core/sqlite    |     3.28.0      |   3.29.0    |
-================================================================================
+### Process formulae in a tap (`linuxbrew/extra`) and _all_ of their dependencies in other taps
+but skip some formulae (`linuxbrew/extra/singularity`).
 
-Batch 1: linuxbrew/extra/strace homebrew/core/nettle homebrew/core/sqlite
+    ```
+    $ ./tap-updater.py linuxbrew/extra --all --skip linuxbrew/extra/singularity
 
-Suggested commands for updating formulae in Batch 1:
+    ================================================================================
+            Formula         | Current version | New version | Outdated dependencies
+    ================================================================================
+    linuxbrew/extra/strace  |       5.1       |     5.2     |
+    homebrew/core/nettle    |      3.4.1      |    3.5.1    |
+    homebrew/core/sqlite    |     3.28.0      |   3.29.0    |
+    ================================================================================
 
-brew bump-formula-pr --no-browse --url=https://github.com/strace/strace/releases/download/v5.2/strace-5.2.tar.xz linuxbrew/extra/strace
-brew bump-formula-pr --no-browse --url=https://ftp.gnu.org/gnu/nettle/nettle-3.5.1.tar.gz homebrew/core/nettle
+    Batch 1: linuxbrew/extra/strace homebrew/core/nettle homebrew/core/sqlite
 
-    | Please verify that URLs exist before executing the above commands!
-    | Consider adding 'version "x.y.z"' to the formula if detected 'new_version' is likely
-    | to cause problems for Homebrew version detection mechanism.
-```
+    Suggested commands for updating formulae in Batch 1:
+
+    brew bump-formula-pr --no-browse --url=https://github.com/strace/strace/releases/download/v5.2/strace-5.2.tar.xz linuxbrew/extra/strace
+    brew bump-formula-pr --no-browse --url=https://ftp.gnu.org/gnu/nettle/nettle-3.5.1.tar.gz homebrew/core/nettle
+
+        | Please verify that URLs exist before executing the above commands!
+        | Consider adding 'version "x.y.z"' to the formula if detected 'new_version' is likely
+        | to cause problems for Homebrew version detection mechanism.
+    ```
 
 Tap Updater outputs "batches" of formulae in which packages can be updated.
 Formulae in a specific batch can be updated in any order.
