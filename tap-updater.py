@@ -287,7 +287,7 @@ for formula in formulae:
 
     # 1. Skip what has to be skipped
     if formula in SKIPLIST:
-      log("skipping %s" % formula, level=10, indent=1, prefix='x')
+      log("skipping %s" % formula, level=10, indent=2, prefix='x')
       continue
 
     # 2. Check if there is a new version of the formula
@@ -301,14 +301,14 @@ for formula in formulae:
 
     # 4. Go to the next formula if output is not what we can process
     if " : " not in stdout or " ==> " not in stdout:
-      log("%s: can't process output of 'brew livecheck'" % formula, level=30, indent=1, prefix='!')
+      log("%s: can't process output of 'brew livecheck'" % formula, level=30, indent=2, prefix='!')
       continue
 
     # 5. Capture old and new versions
     old_versions[formula], new_versions[formula] = stdout.split(" : ")[1].split(' ==> ')
 
     # if VERBOSE:
-    log("new version found: %s => %s" % (old_versions[formula], new_versions[formula]), indent=1, prefix='-')
+    log("new version found: %s => %s" % (old_versions[formula], new_versions[formula]), indent=2, prefix='-')
 
     # Find dependencies of the current formula
     command = ["brew", "deps", "--include-build", "--include-test", "--full-name", formula]
@@ -325,7 +325,8 @@ for formula in formulae:
       deps[formula] = list(filter(lambda x: x.startswith(tap_name), deps[formula]))
 
     if deps[formula]:
-      log("Dependencies:%s" % "".join("\n* " + x for x in deps[formula]), level=10, indent=1)
+      log("dependencies:", level=10, indent=2, prefix="-")
+      log(deps[formula], level=10, indent=3, prefix="num")
 
     if not VERBOSE and not DEBUG and not QUIET:
       print("\033[2K\033[1G", end='')
