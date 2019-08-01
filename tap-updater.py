@@ -242,10 +242,13 @@ process = subprocess.run(command, capture_output=True)
 extra_formulae = process.stdout.decode("ascii").split()
 extra_formulae = set([f"homebrew/core/{x}" if x.count("/") == 0 else x for x in extra_formulae])
 
-if not PROCESS_ALL_TAPS:
-  log(f"Filtering out dependencies from taps other than {TAP_NAME}")
-  log(f"before: {len(extra_formulae)} formula(e)", level=10, indent=1)
+if extra_formulae and not PROCESS_ALL_TAPS:
+  log(f"Filtering out dependencies from taps other than {TAP_NAME}.")
+  log("Hint: use `-a` (`--all`) flag to skip this step.")
+
+  len_before = len(extra_formulae)
   extra_formulae = list(filter(lambda x: x.startswith(TAP_NAME) and x not in formulae, extra_formulae))
+  log(f"before: {len_before} formula(e)", level=10, indent=1)
   log(f"after: {len(extra_formulae)} formula(e)", level=10, indent=1)
 
 
