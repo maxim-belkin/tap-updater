@@ -116,6 +116,15 @@ def log(message, *, level=20, indent=0, prefix='', exit_with_code=None):
   if isinstance(exit_with_code, int):
     exit(exit_with_code)
 
+## End of 'log' function
+
+# from https://stackoverflow.com/a/312464/7410631
+def chunks(object, n):
+  """Yield successive n-sized chunks from 'object'."""
+  if not hasattr(object, '__len__'): object = [object]
+  if not hasattr(object, '__getitem__'): object = list(object) # sets have no 'getitem'
+  for i in range(0, len(object), n): yield object[i : i+n]
+
 log("Starting 'Tap Updater'")
 
 # 'KNOWN_TAPS': taps that we know
@@ -148,7 +157,7 @@ if SKIPLIST:
 
 # Process command-line arguments
 for element in TAPS_OR_FORMULAE:
-  log("Processing: %s" % element)
+  log("Processing command-line argument: %s" % element)
 
   # skip elements that match items in the skip-list
   if element in SKIPLIST:
@@ -215,7 +224,7 @@ for element in TAPS_OR_FORMULAE:
     full_formula_name = f"{tap_name}/{formula_name}"
 
     if full_formula_name in SKIPLIST or formula_name in SKIPLIST:
-      log("skipping %s" % element, level=10)
+      log("skipping %s" % element, level=10, prefix='!')
       continue
 
     formula_file[full_formula_name] = rbfile_location
@@ -237,10 +246,15 @@ if len(formulae) == 0:
 #######################################################################################
 
 log("Obtaining dependencies (including those necessary for building and testing)")
-command = ["brew", "deps", "--include-build", "--include-test", "--full-name", "--union", *list(formulae)]
-process = subprocess.run(command, capture_output=True)
-extra_formulae = process.stdout.decode("ascii").split()
-extra_formulae = set([f"homebrew/core/{x}" if x.count("/") == 0 else x for x in extra_formulae])
+extra_formulae = set()
+for chunk in chunks(formulae, 5):
+  command = ["brew", "deps", "--include-build", "--include-test", "--full-name", "--union", *chunk]
+  process = subprocess.run(command, capture_output=True)
+  deps = process.stdout.decode("ascii").split()
+  deps = set([f"homebrew/core/{d}" if d.count("/") == 0 else d for d in deps])
+  extra_formulae.update(deps)
+extra_formulae.difference_update(formulae)
+log("Found %d build- and test-time dependencies" % len(extra_formulae))
 
 if extra_formulae and not PROCESS_ALL_TAPS:
   log(f"Filtering out dependencies from taps other than {TAP_NAME}.")
@@ -269,7 +283,7 @@ for num, element in enumerate(extra_formulae, 1):
     if element in formula_file and  location != formula_file[element]:
       log(f"Old location: '{formula_file[element]}'\nNew location: '{location}'\n", level=50, exit_with_code=1)
     formula_file[element] = location
-    formulae = formulae.union([element])
+    formulae.update([element])
 
 #### Done adding additional dependencies
 
@@ -290,7 +304,7 @@ for formula in formulae:
 
     # 1. Skip what has to be skipped
     if formula in SKIPLIST:
-      log("skipping %s" % formula, level=10, indent=2, prefix='x')
+      log("skipping %s" % formula, level=10, indent=2, prefix='!')
       continue
 
     # 2. Check if there is a new version of the formula
