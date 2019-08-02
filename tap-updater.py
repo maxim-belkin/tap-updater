@@ -23,6 +23,7 @@ group.add_argument("-q", "--quiet", help="Suppress any intermediate output.", ac
 parser.add_argument("-d", "--debug", help="Display debugging messages.", action="store_true")
 parser.add_argument('-a', '--all', help="Don't limit analysis to formulae in a single tap even if only one tap is specified.", action="store_true")
 parser.add_argument("-s", "--skip", help="White-space-separated list of formulae to skip.", nargs='+', metavar='formula', default=[])
+parser.add_argument("--raw-versions", help="Don't require that detected new version has the same versioning scheme as before.", action="store_true")
 parser.add_argument("--log-file", help="Log file name (Default: tap_updater.log).", action="store", metavar='file', default='tap_updater.log')
 parser.add_argument('taps_or_formulae', help="Taps or formulae you'd like to update.", nargs='+')
 args = parser.parse_args()
@@ -35,6 +36,7 @@ DEBUG = args.debug
 QUIET = args.quiet
 PROCESS_ALL_TAPS = args.all
 LOGFILE = args.log_file
+RAW_VERSIONS = args.raw_versions
 ###
 
 # Set up the logger
@@ -326,7 +328,16 @@ for formula in formulae:
       continue
 
     # 5. Capture old and new versions
-    old_versions[formula], new_versions[formula] = stdout.split(" : ")[1].split(' ==> ')
+    _old, _new = stdout.split(" : ")[1].split(' ==> ')
+
+    if not RAW_VERSIONS and abs(_old.count(".") - _new.count(".")) >=2:
+      log(f"Detected new version for {formula} ({_new}) differs too much from the old one ({_old})")
+      continue
+    if any(c in _new for c in ['alpha', 'beta', 'rc']):
+      log(f"Detected new version for {formula} ({_new}) is not stable.")
+      continue
+
+    old_versions[formula], new_versions[formula] = _old, _new
 
     # if VERBOSE:
     log("new version found: %s => %s" % (old_versions[formula], new_versions[formula]), indent=2, prefix='-')
@@ -354,8 +365,8 @@ for formula in formulae:
 
   except KeyboardInterrupt:
     if formula: log(f"Interrupted. I was processing '{formula}'", exit_with_code=130)
-  except:
-    if formula: log(f"Errored out. I was processing '{formula}'", exit_with_code=1)
+  except Exception as e:
+    if formula: log(f"Errored out. I was processing '{formula}'.\nTraceback:\n{e}", exit_with_code=1)
 
 # outdated_deps - deps (from the tap being analyzed) that are outdated
 outdated_deps = {formula: list(filter(lambda x: x in old_versions, deps[formula])) for formula in old_versions}
