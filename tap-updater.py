@@ -253,8 +253,12 @@ for chunk in chunks(formulae, 5):
   deps = process.stdout.decode("ascii").split()
   deps = set([f"homebrew/core/{d}" if d.count("/") == 0 else d for d in deps])
   extra_formulae.update(deps)
+  if DEBUG: print(".", end='', flush=True)
+if DEBUG: print()
+
 extra_formulae.difference_update(formulae)
 log("Found %d build- and test-time dependencies" % len(extra_formulae))
+log(extra_formulae, indent=1, prefix='num')
 
 if extra_formulae and not PROCESS_ALL_TAPS:
   log(f"Filtering out dependencies from taps other than {TAP_NAME}.")
