@@ -330,12 +330,19 @@ for formula in formulae:
     # 5. Capture old and new versions
     _old, _new = stdout.split(" : ")[1].split(' ==> ')
 
-    if not RAW_VERSIONS and abs(_old.count(".") - _new.count(".")) >=2:
-      log(f"Detected new version for {formula} ({_new}) differs too much from the old one ({_old})")
-      continue
-    if any(c in _new for c in ['alpha', 'beta', 'rc']):
-      log(f"Detected new version for {formula} ({_new}) is not stable.")
-      continue
+    if not RAW_VERSIONS:
+      if _old.count(".") != _new.count("."):
+        log(f"new version ({_new}) differs too much from the old one ({_old})", indent=2, prefix='!')
+        continue
+
+      for _os, _ns in zip(_old.split("."), _new.split(".")):
+        if _os.isdigit != _ns.isdigit:
+          log(f"new version ({_new}) has a naming convention that is different from the currently used one ({_old}).", indent=2, prefix='!')
+          continue
+
+      if any(c in _new for c in ['alpha', 'beta', 'rc', 'preview']):
+        log(f"new version ({_new}) is not stable.", indent=2, prefix='!')
+        continue
 
     old_versions[formula], new_versions[formula] = _old, _new
 
