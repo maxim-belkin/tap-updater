@@ -336,7 +336,7 @@ for formula in formulae:
         continue
 
       for _os, _ns in zip(_old.split("."), _new.split(".")):
-        if _os.isdigit != _ns.isdigit:
+        if _os.isdigit() != _ns.isdigit():
           log(f"new version ({_new}) has a naming convention that is different from the currently used one ({_old}).", indent=2, prefix='!')
           continue
 
