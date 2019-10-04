@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 
 import argparse
+import glob
 import logging
 import os
+import pathlib
 import pprint
 import re
 import subprocess
-import sys
 
 from collections import defaultdict
-from glob import glob
-from pathlib import Path
 
 description = """
 Determine batches in which it is safe to update individual formulae and taps.
@@ -39,20 +38,32 @@ LOGFILE = args.log_file
 RAW_VERSIONS = args.raw_versions
 ###
 
-# Set up the logger
-logger = logging.getLogger("TAP UPDATER")
-logger.level = 1
-formatter = logging.Formatter('%(levelname)-8s %(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+def setup_logger(name="TAP UPDATER",
+                 logger_level=1,
+                 logfile=LOGFILE,
+                 logfile_level=20,
+                 message_format='%(levelname)-8s %(asctime)s %(message)s',
+                 date_format='%Y-%m-%d %H:%M:%S'):
 
-logfile = logging.FileHandler(LOGFILE)
-logfile.level = 10 # DEBUG for now
-logfile.formatter = formatter
-logger.addHandler(logfile)
+  # Create and configure the logger
+  logger = logging.getLogger(name)
+  logger.level = logger_level
+  formatter = logging.Formatter(message_format, datefmt=date_format)
 
-# console = logging.StreamHandler()
-# console.level = 50 # CRITICAL only...
-# console.formatter = formatter
-# logger.addHandler(console)
+  # If we Create and configure the logger
+  if logfile:
+    logfile = logging.FileHandler(logfile)
+    logfile.level = logfile_level # DEBUG for now
+    logfile.formatter = formatter
+    logger.addHandler(logfile)
+
+  # console = logging.StreamHandler()
+  # console.level = 50 # CRITICAL only...
+  # console.formatter = formatter
+  # logger.addHandler(console)
+  return logger
+
+logger = setup_logger()
 
 def format_message(message, *, prefix='', indent=0):
   """Format message into a list of lines for logging purposes."""
@@ -135,8 +146,8 @@ process = subprocess.run(command, capture_output=True)
 KNOWN_TAPS = process.stdout.decode("ascii").split()
 del process, command
 
-log("Local taps")
-log(KNOWN_TAPS, indent=1, prefix='enum')
+log(f"Found {len(KNOWN_TAPS)} local taps.")
+log(KNOWN_TAPS, level=10, prefix='enum')
 
 formulae = set()
 formula_file = {}
@@ -146,100 +157,132 @@ if SKIPLIST:
   SKIP_TAPS = []
   SKIP_FORMULAE = []
   for item in SKIPLIST:
-    n = item.count("/")
-    if n not in range(3):
+    num_slashes = item.count("/")
+    if num_slashes not in range(3):
       log(f"Don't know how to interprete {item} in skip list", exit_with_code=1)
-    if n == 0:
+    if num_slashes == 0:
       SKIP_FORMULAE.append(f"homebrew/core/{item}")
-    elif n == 1:
+    elif num_slashes == 1:
       SKIP_TAPS.append(item)
     else:
       SKIP_FORMULAE.append(item)
 
+def formula_location(element):
+    command = ["brew", "formula", element]
+    process = subprocess.run(command, capture_output=True)
+    if process.returncode:
+      log("Error! Can't process %s:\n%s" % (element, process.stderr.decode("ascii").strip()), level=50, exit_with_code=process.returncode)
+
+    return pathlib.Path(process.stdout.decode("ascii").strip())
+
+def tap_location(tap_name):
+    """
+    Find where the tap is located
+    """
+    if tap_name.count("/") != 1:
+      raise ValueError(f"Incorrect tap name specified: {tap_name}")
+
+    command = ["brew", "--repo", tap_name]
+    process = subprocess.run(command, capture_output=True)
+
+    if process.returncode:
+      log(process.stderr.decode("ascii").strip(), level=50, exit_with_code=process.returncode)
+
+    tap_location = process.stdout.decode("ascii").strip()
+    log("Tap location: %s" % tap_location, level=10)
+
+    return tap_location
+
+
+def find_formulae_files(tap_folder):
+    """
+    Find all formula files in the tap.
+    """
+    cwd = os.getcwd()
+    try:
+      os.chdir(tap_folder)
+    except FileNotFoundError:
+      log(f"Failed to navigate to {tap_folder}", level=50, exit_with_code=1)
+
+    rbfiles = []
+    for subfolder in ["Formula", "HomebrewFormula", ""]:
+      if not os.path.exists(subfolder): continue
+      rbfiles.extend(glob.glob(os.path.join(subfolder,"*.rb")))
+
+    log("found %d .rb files in %s" % (len(rbfiles), tap_folder), level=10)
+
+    not_formulae = []
+    for file in rbfiles:
+      command = ["brew", "info", file]
+      process = subprocess.run(command, capture_output=True)
+      if process.returncode: not_formulae.append(file)
+
+    if not_formulae:
+      log("detected %d files that are not formulae" % len(not_formulae), level=10)
+      log(not_formulae, level=10, prefix='enum')
+      rbfiles = list(set(rbfiles).difference(not_formulae))
+
+    os.chdir(cwd)
+    return rbfiles
+
+
+def process_tap(tap_name):
+    """
+    Process specified tap and return a dictionary
+    that maps fully-qualified formulae names to
+    files on disk.
+    """
+    log("Processing %s (tap)" % tap_name)
+    tap_folder = tap_location(tap_name)
+    rbfiles = find_formulae_files(tap_folder)
+
+    # Prefix tap name to formulae names
+    full_names = [f"{tap_name}/{pathlib.Path(rbfile).stem}" for rbfile in rbfiles]
+
+    formula_file = {}
+    for full_name, rbfile in zip(full_names, rbfiles):
+      formula_file[full_name] = os.path.join(tap_folder, rbfile)
+
+    return formula_file
+
 
 # Process command-line arguments
+log("Processing command-line arguments", level=10)
 for element in TAPS_OR_FORMULAE:
-  log("Processing command-line argument: %s" % element)
+  log(element, level=10, prefix='enum')
 
   # skip elements that match items in the skip-list
   if element in SKIPLIST:
-      log("%s " % element, level=10)
+      log(f"""{element} is in the 'skip' list""", level=10, indent=1, prefix='- ')
       continue
 
-  if element in KNOWN_TAPS: # IF: This is a tap we know.
-    log("%s is a tap" % element, level=10)
+  if element in KNOWN_TAPS:
     tap_name = element
+    tap_formulae_files = process_tap(element)
+    tap_formulae_names = tap_formulae_files.keys()
 
-    # 1. Detect tap location
-    # CREATED VARIABLE: 'this_tap_folder'
-    command = ["brew", "--repo", tap_name]
-    process = subprocess.run(command, capture_output=True)
-    if process.stderr:
-      log(process.stderr.decode("ascii").strip(), level=50, exit_with_code=1)
-    this_tap_folder = process.stdout.decode("ascii").strip()
-    del command, process
-    log("Tap location: %s" % this_tap_folder, level=10)
-
-    # Formulae can be stored in different subfolders, if at all.
-    # User specified a tap, so we want to get a list of all 
-    # formulae in that tap.
-    for suffix in ["Formula", "HomebrewFormula", ""]:
-      if os.path.exists(f"{this_tap_folder}/{suffix}"):
-        os.chdir(f"{this_tap_folder}/{suffix}")
-        break
-    del suffix
-    log("Folder with formulae is located at %s" % os.path.abspath("."), level=10)
-
-    # Find all *.rb files
-    rbfiles = glob("*.rb")
-    if not rbfiles: continue # I mean, who would do that?... but, you know,...
-    log("Found %d formulae" % len(rbfiles), level=10)
-
-    # Remove .rb from filenames
-    names = (os.path.splitext( rbfile )[0] for rbfile in rbfiles)
-
-    # Prefix tap name to formulae names
-    full_names = list(f"{tap_name}/{name}" for name in names)
-
-    # Add formulae from this tap to the list of formulae to check
-    formulae = formulae.union(full_names)
-
-    for full_name, rbfile in zip(full_names, rbfiles):
-      formula_file[full_name] = f"{os.path.abspath('.')}/{rbfile}"
-
-    del rbfiles, names, full_names
-
-  else: # This is not a tap we know...
-
-    # We assume that this is a formula.
-    # We (could but) don't tap any new taps
-
-    command = ["brew", "formula", element]
-    process = subprocess.run(command, capture_output=True)
-    if process.stderr:
-      log("Error: can't process %s:\n%s" % (element, process.stderr.decode("ascii").strip()), level=50, exit_with_code=1)
-
-    rbfile_location = Path(process.stdout.decode("ascii").strip())
-    formula_name = rbfile_location.stem
-    tap_name = "/".join(rbfile_location.parts[-4:-2]).replace("homebrew-","")
-
+    formulae = formulae.union(tap_formulae_names)
+    formula_file = {**formula_file, **tap_formulae_files}
+  else:
+    file_location = formula_location(element)
+    formula_name = rbfile.stem
+    tap_name = "/".join(file_location.parts[-4:-2]).replace("homebrew-","")
     full_formula_name = f"{tap_name}/{formula_name}"
 
-    if full_formula_name in SKIPLIST or formula_name in SKIPLIST:
+    if set(SKIPLIST).intersection([full_formula_name, formula_name]):
       log("skipping %s" % element, level=10, prefix='!')
       continue
 
-    formula_file[full_formula_name] = rbfile_location
     formulae = formulae.union([full_formula_name])
+    formula_file[full_formula_name] = file_location
 
   # this is after if/else and inside 'for element in'
-  # log(f"""Tap: {tap_name}""", level=10)
-  # log("Formula(e):", level=10)
-  # log(formulae, level=10, indent=1, prefix='enum')
-
   if not PROCESS_ALL_TAPS:
     if TAP_NAME is not None and TAP_NAME != tap_name:
-      log(f"Error processing {element}: can't process formulae from different taps.\nConsider using '-a' flag.", level=50, exit_with_code=1)
+      log(f"""\
+          Error processing {element}.
+          Can't process formulae from different taps.
+          Consider using '-a' flag.""", level=50, exit_with_code=1)
     TAP_NAME = tap_name
 
 if len(formulae) == 0:
@@ -267,7 +310,8 @@ if extra_formulae and not PROCESS_ALL_TAPS:
   log("Hint: use `-a` (`--all`) flag to skip this step.")
 
   len_before = len(extra_formulae)
-  extra_formulae = list(filter(lambda x: x.startswith(TAP_NAME) and x not in formulae, extra_formulae))
+  if TAP_NAME:
+    extra_formulae = list(filter(lambda x: x.startswith(TAP_NAME) and x not in formulae, extra_formulae))
   log(f"before: {len_before} formula(e)", level=10, indent=1)
   log(f"after: {len(extra_formulae)} formula(e)", level=10, indent=1)
 
@@ -286,7 +330,7 @@ for num, element in enumerate(extra_formulae, 1):
       log("\nError: can't process %s:\n%s" % (element, process.stderr.decode("ascii").strip()), level=50, exit_with_code=1)
 
     location = process.stdout.decode("ascii").strip()
-    if element in formula_file and  location != formula_file[element]:
+    if element in formula_file and location != formula_file[element]:
       log(f"Old location: '{formula_file[element]}'\nNew location: '{location}'\n", level=50, exit_with_code=1)
     formula_file[element] = location
     formulae.update([element])
