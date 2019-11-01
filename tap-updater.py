@@ -265,7 +265,7 @@ for element in TAPS_OR_FORMULAE:
     formula_file = {**formula_file, **tap_formulae_files}
   else:
     file_location = formula_location(element)
-    formula_name = rbfile.stem
+    formula_name = file_location.stem
     tap_name = "/".join(file_location.parts[-4:-2]).replace("homebrew-","")
     full_formula_name = f"{tap_name}/{formula_name}"
 
