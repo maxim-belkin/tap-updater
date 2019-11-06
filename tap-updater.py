@@ -63,8 +63,6 @@ def setup_logger(name="TAP UPDATER",
   # logger.addHandler(console)
   return logger
 
-logger = setup_logger()
-
 def format_message(message, *, prefix='', indent=0):
   """Format message into a list of lines for logging purposes."""
 
@@ -137,35 +135,6 @@ def chunks(object, n):
   if not hasattr(object, '__len__'): object = [object]
   if not hasattr(object, '__getitem__'): object = list(object) # sets have no 'getitem'
   for i in range(0, len(object), n): yield object[i : i+n]
-
-log("Starting 'Tap Updater'")
-
-# 'KNOWN_TAPS': taps that we know
-command = ["brew", "tap"]
-process = subprocess.run(command, capture_output=True)
-KNOWN_TAPS = process.stdout.decode("ascii").split()
-del process, command
-
-log(f"Found {len(KNOWN_TAPS)} local taps.")
-log(KNOWN_TAPS, level=10, prefix='enum')
-
-formulae = set()
-formula_file = {}
-TAP_NAME = None
-
-if SKIPLIST:
-  SKIP_TAPS = []
-  SKIP_FORMULAE = []
-  for item in SKIPLIST:
-    num_slashes = item.count("/")
-    if num_slashes not in range(3):
-      log(f"Don't know how to interprete {item} in skip list", exit_with_code=1)
-    if num_slashes == 0:
-      SKIP_FORMULAE.append(f"homebrew/core/{item}")
-    elif num_slashes == 1:
-      SKIP_TAPS.append(item)
-    else:
-      SKIP_FORMULAE.append(item)
 
 def formula_location(element):
     command = ["brew", "formula", element]
@@ -245,6 +214,43 @@ def process_tap(tap_name):
 
     return formula_file
 
+
+def generate_skip_lists(provided_skip_list):
+
+  s_taps, s_formulae = [], []
+
+  for item in provided_skip_list:
+    num_slashes = item.count("/")
+
+    if num_slashes not in range(3):
+      log(f"Don't know how to interprete {item} in skip list", exit_with_code=1)
+
+    if num_slashes == 0:
+      s_formulae.append(f"homebrew/core/{item}")
+    elif num_slashes == 1:
+      s_taps.append(item)
+    else:
+      s_formulae.append(item)
+
+  return s_taps, s_formulae
+
+logger = setup_logger()
+log("Starting 'Tap Updater'")
+
+# 'KNOWN_TAPS': taps that we know
+command = ["brew", "tap"]
+process = subprocess.run(command, capture_output=True)
+KNOWN_TAPS = process.stdout.decode("ascii").split()
+del process, command
+
+log(f"Found {len(KNOWN_TAPS)} local taps.")
+log(KNOWN_TAPS, level=10, prefix='enum')
+
+formulae = set()
+formula_file = {}
+TAP_NAME = None
+
+SKIP_TAPS, SKIP_FORMULAE = generate_skip_lists(SKIPLIST)
 
 # Process command-line arguments
 log("Processing command-line arguments", level=10)
