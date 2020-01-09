@@ -364,7 +364,7 @@ for formula in formulae:
       continue
 
     # 2. Check if there is a new version of the formula
-    command = ["brew", "livecheck", "-n", formula]
+    command = ["brew", "livecheck", "--newer-only", formula]
     process = subprocess.run(command, capture_output=True)
     stdout = process.stdout.decode("ascii").strip()
 
