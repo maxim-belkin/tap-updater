@@ -506,7 +506,7 @@ if batches[1]:
         if match:
           old_url = match.group(1)
           new_url = old_url.replace(old_versions[formula], new_versions[formula], -1)
-          log("brew bump-formula-pr --no-browse --url=%s %s" % (new_url, formula), indent=1)
+          log("brew bump-formula-pr --no-browse --no-fork --url=%s %s" % (new_url, formula), indent=1)
           break
       else:
           log("%s: couldn't match url in the formula file" % formula, level=40, indent=1)
