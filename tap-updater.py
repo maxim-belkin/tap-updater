@@ -369,16 +369,16 @@ for formula in formulae:
     stdout = process.stdout.decode("ascii").strip()
 
     # 3. Go to the next formula if the current one is up-to-date
-    if not stdout:
+    if not stdout or stdout == "No newer upstream versions.":
       continue
 
     # 4. Go to the next formula if output is not what we can process
-    if ":" not in stdout or " ==> " not in stdout:
-      log("%s: can't process output of 'brew livecheck'" % formula, level=30, indent=2, prefix='!')
+    if ": " not in stdout or " ==> " not in stdout:
+      log(f"{formula}: can't process output of 'brew livecheck':\n{stdout}\n", level=30, indent=2, prefix='!')
       continue
 
     # 5. Capture old and new versions
-    _old, _new = stdout.split(":")[1].split(' ==> ')
+    _old, _new = stdout.split(": ")[1].split(' ==> ')
 
     if not RAW_VERSIONS:
       if _old.count(".") != _new.count("."):
